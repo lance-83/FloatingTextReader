@@ -98,13 +98,15 @@ WM_HOTKEY = 786
 VK_F1 = 112
 VK_LEFT = 37
 VK_RIGHT = 39
+VK_UP = 38
+VK_DOWN = 40
 MOD_NOREPEAT = 16384
 
 # 自动滚动速度：0.6 行/秒起步，每档 0.2 行/秒，最高 6.0 行/秒
 AUTO_SPEED_MIN = 0.6
 AUTO_SPEED_MAX = 6.0
 AUTO_SPEED_STEP = 0.2
-AUTO_SPEED_DEFAULT = 1.0
+AUTO_SPEED_DEFAULT = 0.6
 
 user32.RegisterHotKey.restype = ctypes.c_bool
 user32.RegisterHotKey.argtypes = [
@@ -208,6 +210,8 @@ class FloatingTextWindow(QWidget):
         self.f1_down = False
         self.left_down = False
         self.right_down = False
+        self.up_down = False
+        self.down_down = False
 
         # 轮询 F1 / 左右方向键的按下状态（不拦截按键）
         self.key_poll_timer = QTimer(self)
@@ -377,7 +381,7 @@ class FloatingTextWindow(QWidget):
             self.show_hint("自动滚动：%.1f 行/秒，滚轮调速，←→ 换向" % self.auto_speed)
         else:
             self.auto_scroll_timer.stop()
-            self.show_hint("已切回手动滚动（滚轮翻页）")
+            self.show_hint("已切回手动滚动（滚轮 / ↑↓ 翻页）")
 
     def set_auto_speed(self, speed):
         """调节自动滚动速度：滚轮上=加速，下=减速，每档 0.2 行/秒"""
@@ -410,7 +414,7 @@ class FloatingTextWindow(QWidget):
         self.raise_()
 
     def poll_keys(self):
-        """轮询 F1（按住显示）与左右方向键（自动滚动换向）"""
+        """轮询 F1（按住显示）与方向键（自动模式 ←→ 换向，手动模式 ↑↓ 翻页）"""
         f1_down = key_pressed(VK_F1)
         if self.display_mode == "hold":
             if f1_down and not self.isVisible():
@@ -429,6 +433,17 @@ class FloatingTextWindow(QWidget):
                 self.set_auto_direction(-1)
             self.left_down = left_down
             self.right_down = right_down
+
+        # 手动模式下 ↑↓ 翻页（只在窗口可见时生效）
+        if not self.auto_scroll and self.isVisible():
+            up_down = key_pressed(VK_UP)
+            down_down = key_pressed(VK_DOWN)
+            if up_down and not self.up_down:
+                self.scroll_text(-1)
+            if down_down and not self.down_down:
+                self.scroll_text(1)
+            self.up_down = up_down
+            self.down_down = down_down
 
     def show_hint(self, text):
         """在窗口右上角短暂显示一行提示"""
@@ -510,7 +525,7 @@ class FloatingTextWindow(QWidget):
 
         # 滚动模式（默认：手动滚轮翻页）
         scroll_menu = menu.addMenu("▶️ 滚动模式")
-        for value, label in ((False, "手动滚动（滚轮翻页）"),
+        for value, label in ((False, "手动滚动（滚轮 / ↑↓ 翻页）"),
                              (True, "自动滚动（滚轮调速，←→ 换向）")):
             act = QAction(label, self)
             act.setCheckable(True)
