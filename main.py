@@ -93,17 +93,18 @@ def remove_global_hook():
         hook_id = None
 
 
-# 老板键：F1
+# 老板键：F1；F2 = 暂停/继续自动滚动
 WM_HOTKEY = 786
 VK_F1 = 112
+VK_F2 = 113
 VK_LEFT = 37
 VK_RIGHT = 39
 VK_UP = 38
 VK_DOWN = 40
 MOD_NOREPEAT = 16384
 
-# 自动滚动速度：0.6 行/秒起步，每档 0.2 行/秒，最高 6.0 行/秒
-AUTO_SPEED_MIN = 0.6
+# 自动滚动速度：0.2 行/秒起步，每档 0.2 行/秒，最高 6.0 行/秒
+AUTO_SPEED_MIN = 0.2
 AUTO_SPEED_MAX = 6.0
 AUTO_SPEED_STEP = 0.2
 AUTO_SPEED_DEFAULT = 0.6
@@ -207,7 +208,9 @@ class FloatingTextWindow(QWidget):
         self.auto_scroll = False
         self.auto_speed = AUTO_SPEED_DEFAULT
         self.auto_direction = 1
+        self.auto_paused = False
         self.f1_down = False
+        self.f2_down = False
         self.left_down = False
         self.right_down = False
         self.up_down = False
@@ -376,9 +379,10 @@ class FloatingTextWindow(QWidget):
     def set_auto_scroll(self, enabled):
         """开启/关闭自动滚动（默认关闭）"""
         self.auto_scroll = bool(enabled)
+        self.auto_paused = False
         if self.auto_scroll:
             self.auto_scroll_timer.start(self.auto_interval())
-            self.show_hint("自动滚动：%.1f 行/秒，滚轮调速，←→ 换向" % self.auto_speed)
+            self.show_hint("自动滚动：%.1f 行/秒，F2 暂停，滚轮调速，←→ 换向" % self.auto_speed)
         else:
             self.auto_scroll_timer.stop()
             self.show_hint("已切回手动滚动（滚轮 / ↑↓ 翻页）")
@@ -388,9 +392,21 @@ class FloatingTextWindow(QWidget):
         speed = round(speed / AUTO_SPEED_STEP) * AUTO_SPEED_STEP
         speed = max(AUTO_SPEED_MIN, min(AUTO_SPEED_MAX, speed))
         self.auto_speed = round(speed, 1)
-        if self.auto_scroll:
+        if self.auto_scroll and not self.auto_paused:
             self.auto_scroll_timer.start(self.auto_interval())
         self.show_hint("滚动速度：%.1f 行/秒" % self.auto_speed)
+
+    def toggle_auto_pause(self):
+        """F2：暂停 / 继续自动滚动"""
+        if not self.auto_scroll:
+            return
+        self.auto_paused = not self.auto_paused
+        if self.auto_paused:
+            self.auto_scroll_timer.stop()
+            self.show_hint("已暂停，F2 继续")
+        else:
+            self.auto_scroll_timer.start(self.auto_interval())
+            self.show_hint("已恢复自动滚动")
 
     def set_auto_direction(self, direction):
         """调节自动滚动方向（→ 前进，← 后退）"""
@@ -423,16 +439,20 @@ class FloatingTextWindow(QWidget):
                 self.hide()
         self.f1_down = f1_down
 
-        # 方向键只在自动滚动且窗口可见时生效，避免在别的程序里按键被误改
+        # 方向键与 F2 只在自动滚动且窗口可见时生效，避免在别的程序里按键被误改
         if self.auto_scroll and self.isVisible():
             left_down = key_pressed(VK_LEFT)
             right_down = key_pressed(VK_RIGHT)
+            f2_down = key_pressed(VK_F2)
             if right_down and not self.right_down:
                 self.set_auto_direction(1)
             if left_down and not self.left_down:
                 self.set_auto_direction(-1)
+            if f2_down and not self.f2_down:
+                self.toggle_auto_pause()
             self.left_down = left_down
             self.right_down = right_down
+            self.f2_down = f2_down
 
         # 手动模式下 ↑↓ 翻页（只在窗口可见时生效）
         if not self.auto_scroll and self.isVisible():
@@ -533,10 +553,13 @@ class FloatingTextWindow(QWidget):
             act.triggered.connect(lambda checked, v=value: self.set_auto_scroll(v))
             scroll_menu.addAction(act)
 
+        speed_text = "速度 %.1f 行/秒" % self.auto_speed
+        if self.auto_paused:
+            speed_text += "（已暂停）"
         menu.addAction("当前: %s / %s（%s）" % (
             "按住 F1 显示" if self.display_mode == "hold" else "F1 切换显示",
             "自动滚动" if self.auto_scroll else "手动滚动",
-            "速度 %.1f 行/秒" % self.auto_speed if self.auto_scroll else self.scroll_mode,
+            speed_text if self.auto_scroll else self.scroll_mode,
         ))
 
         menu.addSeparator()
